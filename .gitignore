@@ -1,0 +1,9 @@
+# Runtime and build output stay local.
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+# Never commit keys.
+*.pem
+*.key

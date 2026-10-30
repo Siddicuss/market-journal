@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Journal</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="side">
+    <div class="brand"><img src="icon.svg" alt=""><span>Market Journal</span></div>
+    <a href="#/dashboard" data-nav="dashboard"><span class="ico">◧</span>Dashboard</a>
+    <a href="#/trades" data-nav="trades"><span class="ico">☰</span>Trades</a>
+    <a href="#/calendar" data-nav="calendar"><span class="ico">▦</span>Calendar</a>
+    <a href="#/reports" data-nav="reports"><span class="ico">▥</span>Reports</a>
+    <a href="#/weekly" data-nav="weekly"><span class="ico">✎</span>Weekly review</a>
+    <div class="grow"></div>
+    <a href="#/settings" data-nav="settings"><span class="ico">⚙</span>Settings</a>
+    <div class="donate">
+      <span>Enjoying Market Journal?</span>
+      <button id="donate" title="Opens PayPal in your web browser"><img src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" alt="Donate with PayPal"></button>
+    </div>
+    <div class="readonly">Read-only · never places orders</div>
+  </nav>
+  <div class="main">
+    <header class="top">
+      <div id="crumb" class="crumb"></div>
+      <div class="top-right">
+        <div id="balance" class="balance"></div>
+        <div id="sync-msg" class="sync-msg"></div>
+        <button id="sync-btn" class="btn primary">Sync</button>
+      </div>
+    </header>
+    <div id="banner"></div>
+    <main id="view" class="view"></main>
+  </div>
+</div>
+<div id="tip" class="tip" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
