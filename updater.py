@@ -70,6 +70,8 @@ def check(fetch=None):
 
 def download(release, progress=lambda done, total: None, folder=None):
     url = release['url']
+    if not release.get('sha256'):
+        raise UpdateError("GitHub didn't list a checksum for this download, so it wasn't installed.")
     if not url.startswith(ALLOWED_HOSTS):
         raise UpdateError('The download link is not on GitHub.')
     folder = Path(folder or Path(tempfile.gettempdir()) / 'MarketJournal-update')
@@ -92,7 +94,7 @@ def download(release, progress=lambda done, total: None, folder=None):
     if release.get('size') and part.stat().st_size != release['size']:
         part.unlink(missing_ok=True)
         raise UpdateError('The download was incomplete. Try again.')
-    if release.get('sha256') and sha.hexdigest() != release['sha256'].lower():
+    if sha.hexdigest() != release['sha256'].lower():
         part.unlink(missing_ok=True)
         raise UpdateError("The download didn't match GitHub's checksum, so it wasn't installed.")
     os.replace(part, dest)

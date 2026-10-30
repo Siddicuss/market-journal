@@ -29,6 +29,7 @@ FILTER_KEYS = ('start', 'end', 'platform', 'series', 'side', 'outcome', 'status'
 PLATFORMS = {'kalshi': 'Kalshi', 'polymarket': 'Polymarket'}
 DONATE_URL = 'https://www.paypal.com/donate/?business=DCQT2RXMBW7B2&no_recurring=0&currency_code=USD'
 AUTO_SYNC_SECONDS = 300
+IDLE_TIMEOUT_SECONDS = 10
 POLYMARKET_ENABLED = False  # shown as "Coming soon" in Settings; the code is kept for later
 
 
@@ -49,6 +50,7 @@ class App:
         self.updates = updates
         self.quit = quit  # closes the window so the installer can replace the app
         self.update_state = {'running': False, 'message': '', 'error': None}
+        self.update_lock = threading.Lock()
         self.pm = None
         self.client = None
         self.source = None
@@ -120,12 +122,18 @@ class App:
     def start_update(self):
         if not self.updates.installed():
             raise ValueError('Updates install from the installed app, not from source.')
-        if self.update_state['running']:
-            return False
-        info = self.updates.check()
-        if not info['available']:
-            raise ValueError(f'Market Journal {VERSION} is the newest version.')
-        self.update_state.update(running=True, message='Downloading…', error=None)
+        with self.update_lock:
+            if self.update_state['running']:
+                return False
+            self.update_state.update(running=True, message='Checking GitHub…', error=None)
+        try:
+            info = self.updates.check()
+            if not info['available']:
+                raise ValueError(f'Market Journal {VERSION} is the newest version.')
+        except Exception:
+            self.update_state.update(running=False, message='')
+            raise
+        self.update_state['message'] = 'Downloading…'
 
         def progress(done, total):
             if total:
@@ -323,9 +331,11 @@ class App:
                 'minutes_left', 'market_result', 'tags', 'mistakes', 'note']
         writer = csv.writer(out)
         writer.writerow(cols)
+        # Excel runs text cells that start like a formula; a leading ' keeps notes and titles as plain text.
+        safe = lambda v: "'" + v if isinstance(v, str) and v[:1] in ('=', '+', '-', '@', '\t', '\r') else v
         fmt = lambda ts: stats.local(ts).strftime('%Y-%m-%d %H:%M:%S') if ts else ''
         for t in self.filtered(q):
-            writer.writerow([fmt(t['open_ts']), fmt(t['close_ts']), PLATFORMS[t['platform']], t['series_name'], t['ticker'], t['title'], t['side'].upper(),
+            writer.writerow([safe(v) for v in [fmt(t['open_ts']), fmt(t['close_ts']), PLATFORMS[t['platform']], t['series_name'], t['ticker'], t['title'], t['side'].upper(),
                              t['status'], t['close_reason'] or '', t['contracts'], t['entry_price'],
                              t['exit_price'] if t['exit_price'] is not None else '', round(t['cost'], 4),
                              round(t['fees'], 4), round(t['pnl_gross'], 4), round(t['pnl'], 4),
@@ -335,13 +345,14 @@ class App:
                              t['market_result'] or '',
                              '; '.join(x['name'] for x in t['tags'] if x['kind'] == 'tag'),
                              '; '.join(x['name'] for x in t['tags'] if x['kind'] == 'mistake'),
-                             t.get('note', '')])
+                             t.get('note', '')]])
         return out.getvalue().encode('utf-8-sig')
 
 
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         server_version = 'MarketJournal'
+        timeout = IDLE_TIMEOUT_SECONDS  # drop connections that go quiet, so idle ones can't pile up and freeze the app
 
         def log_message(self, *args):
             pass
@@ -352,6 +363,7 @@ def make_handler(app):
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Referrer-Policy', 'no-referrer')
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -361,7 +373,13 @@ def make_handler(app):
             self._send(status, json.dumps(value).encode())
 
         def _authorized(self, q):
-            return secrets.compare_digest(self.headers.get('X-Token') or q.get('t') or '', app.token)
+            supplied = self.headers.get('X-Token') or q.get('t') or ''
+            return secrets.compare_digest(supplied.encode('utf-8', 'replace'), app.token.encode())  # bytes, so odd characters can't crash it
+
+        def _host_ok(self):
+            """Answer only requests addressed to this app, so a website can't reach it under its own name (DNS rebinding)."""
+            port = self.server.server_address[1]
+            return (self.headers.get('Host') or '').lower() in (f'127.0.0.1:{port}', f'localhost:{port}')
 
         def _query(self):
             parsed = urlparse(self.path)
@@ -377,10 +395,12 @@ def make_handler(app):
             except (KalshiError, PolymarketError, UpdateError) as exc:
                 self._json(502, {'error': str(exc)})
             except Exception as exc:
-                log.error('Request failed: %s\n%s', self.path, traceback.format_exc())
+                log.error('Request failed: %s\n%s', urlparse(self.path).path, traceback.format_exc())  # no query: it can hold the token
                 self._json(500, {'error': f'Something went wrong: {exc}'})
 
         def do_GET(self):
+            if not self._host_ok():
+                return self._send(421, b'Wrong address', 'text/plain')
             path, q = self._query()
             app.last_seen = time.time()
             if path.startswith('/api/'):
@@ -401,6 +421,8 @@ def make_handler(app):
             self._send(200, file.read_bytes(), ctype)
 
         def do_POST(self):
+            if not self._host_ok():
+                return self._send(421, b'Wrong address', 'text/plain')
             path, q = self._query()
             app.last_seen = time.time()
             if not self._authorized(q):

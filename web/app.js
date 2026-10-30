@@ -350,7 +350,7 @@ async function viewTrade(seq, id) {
   const { trade: t, market: m } = await api('trade', { id });
   if (seq !== renderSeq) return;
   crumb(`<a href="#/trades">Trades</a> / ${esc(t.series_name || t.ticker)}`);
-  const sideWord = t.side.toUpperCase();
+  const sideWord = esc(t.side.toUpperCase());
   const outcome = t.market_result ? `Market settled <b>${esc(t.market_result.toUpperCase())}</b>` : 'Market not settled yet';
   const where = PLATFORM[t.platform] || 'Kalshi';
   v.innerHTML = `
@@ -495,7 +495,7 @@ async function viewCalendar(seq, ym) {
 }
 
 async function viewDay(seq, day) {
-  day = day || iso(new Date());
+  day = /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? day : iso(new Date());
   crumb(`<a href="#/calendar/${day.slice(0, 7)}">Calendar</a> / ${shortDay(day)}`);
   const d = await api('day', { day });
   if (seq !== renderSeq) return;

@@ -707,9 +707,72 @@ class ServerTests(unittest.TestCase):
             off.post('/api/polymarket', {'address': wallet})
         self.assertEqual(self.store.get_meta('pm_wallet'), wallet)  # kept for when it comes back
 
+    def test_only_answers_its_own_address(self):
+        import http.client
+        port = self.httpd.server_address[1]
+
+        def raw(method, path, host, headers=None):
+            c = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            c.putrequest(method, path, skip_host=True)
+            c.putheader('Host', host)
+            for k, v in (headers or {}).items():
+                c.putheader(k, v)
+            c.putheader('Content-Length', '0')
+            c.endheaders()
+            r = c.getresponse()
+            r.read()
+            c.close()
+            return r.status
+
+        token = {'X-Token': self.app.token}
+        self.assertEqual(raw('GET', '/', 'evil.example'), 421)  # a rebinding website gets nothing
+        self.assertEqual(raw('GET', '/api/status', f'evil.example:{port}', token), 421)
+        self.assertEqual(raw('POST', '/api/heartbeat', 'evil.example', token), 421)
+        self.assertEqual(raw('GET', '/', f'127.0.0.1:{port}'), 200)
+        self.assertEqual(raw('GET', '/api/status', f'localhost:{port}', token), 200)
+
+    def test_odd_token_is_refused_not_crashed(self):
+        import http.client
+        c = http.client.HTTPConnection('127.0.0.1', self.httpd.server_address[1], timeout=5)
+        c.putrequest('GET', '/api/status')
+        c.putheader('X-Token', 'é'.encode('utf-8').decode('latin-1'))
+        c.endheaders()
+        r = c.getresponse()
+        self.assertEqual(r.status, 403)
+        c.close()
+        self.assertEqual(self.call('/api/status?t=%C3%A9', token=False)[0], 403)
+
+    def test_errors_never_log_the_token(self):
+        self.app.get = lambda path, q: 1 / 0
+        with self.assertLogs('journal', 'ERROR') as logs:
+            self.assertEqual(self.call('/api/status?t=' + self.app.token, token=False)[0], 500)
+        text = ' '.join(logs.output)
+        self.assertNotIn(self.app.token, text)
+        self.assertIn('/api/status', text)
+
     def test_requires_token(self):
         self.assertEqual(self.call('/api/status', token=False)[0], 403)
         self.assertEqual(self.call('/api/sync', {}, token=False)[0], 403)
+
+    def test_idle_connections_are_closed(self):
+        import socket
+        import server
+        original, server.IDLE_TIMEOUT_SECONDS = server.IDLE_TIMEOUT_SECONDS, 0.5
+        try:
+            httpd = serve(self.app)
+        finally:
+            server.IDLE_TIMEOUT_SECONDS = original
+        try:
+            idle = [socket.create_connection(httpd.server_address, timeout=5) for _ in range(5)]  # never send a request
+            started = time.time()
+            for s in idle:
+                self.assertEqual(s.recv(1), b'')  # the app hung up on it
+                s.close()
+            self.assertLess(time.time() - started, 4)
+            self.assertEqual(self.call('/api/status')[0], 200)  # normal requests are unaffected
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
     def test_static_files_and_traversal(self):
         status, body = self.call('/', token=False)
@@ -743,6 +806,9 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn('FOMO', csv.decode('utf-8-sig'))
         self.assertIn('hello', csv.decode('utf-8-sig'))
+        self.call('/api/trade/note', {'id': tid, 'note': '=HYPERLINK("http://x")'})
+        _, csv = self.call('/api/export.csv')
+        self.assertIn("'=HYPERLINK", csv.decode('utf-8-sig'))  # Excel shows it as text instead of running it
 
     def test_credentials_and_sync(self):
         status = self.call('/api/status')[1]
@@ -963,6 +1029,8 @@ class UpdaterTests(unittest.TestCase):
             self.download(b'setup', size=99)
         with self.assertRaises(updater.UpdateError):
             self.download(b'setup', url='https://example.com/MarketJournal-Setup.exe')
+        with self.assertRaises(updater.UpdateError):
+            self.download(b'setup', sha256=None)  # no GitHub checksum: refuse rather than install unchecked
 
     def test_installer_wait_returns_for_closed_app(self):
         import installer
