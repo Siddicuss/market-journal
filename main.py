@@ -67,7 +67,7 @@ def main():
     try:
         import webview
         store = Store(data_dir / 'journal.db')
-        app = App(store, resource_dir() / 'web')
+        app = App(store, resource_dir() / 'web', quit=lambda: [w.destroy() for w in list(webview.windows)])
         httpd = serve(app)
     except Exception as exc:
         logging.exception('Startup failed')

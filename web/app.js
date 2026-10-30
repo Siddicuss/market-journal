@@ -697,6 +697,10 @@ async function viewSettings(seq) {
         <div class="row"><button class="btn" id="dsync" ${s.configured ? '' : 'disabled'}>Sync now</button><button class="btn" id="drebuild">Rebuild trades</button></div>
         <p class="muted">Last sync: ${s.last_sync ? dtFull(s.last_sync) : 'never'}</p>
       </div></div>
+      <div class="panel"><div class="hd"><h2>Updates</h2><span class="legend">Version ${esc(s.version)}</span></div><div class="bd">
+        <p class="muted" style="margin-top:0" id="umsg">${esc(s.update.running ? s.update.message : s.update.error || '')}</p>
+        <div class="row"><button class="btn" id="ucheck" ${s.update.running ? 'disabled' : ''}>Check for updates</button><button class="btn primary" id="uinstall" hidden>Update now</button></div>
+      </div></div>
     </div>
     <div class="panel"><div class="hd"><h2>Market names</h2><span class="legend">Rename any market. Leave a name blank to use the automatic one.</span></div><div class="bd flush">
       <table class="t"><thead><tr><th>Name shown</th><th>Platform</th><th>Series</th><th>Platform's title</th><th class="num">Trades</th><th></th></tr></thead><tbody>
@@ -752,6 +756,27 @@ async function viewSettings(seq) {
   $$('[data-series]').forEach(i => i.onchange = () => renameSeries(i.dataset.series, i.value));
   $$('[data-series-reset]').forEach(b => b.onclick = () => renameSeries(b.dataset.seriesReset, ''));
   $$('[data-rename]').forEach(i => i.onchange = async () => { try { await post('tags/rename', { id: +i.dataset.rename, name: i.value }); TAGS = (await api('tags')).tags; toast('Renamed'); } catch (e) { toast(e.message); } });
+  const umsg = $('#umsg'), ucheck = $('#ucheck'), uinstall = $('#uinstall');
+  const watchUpdate = async () => {
+    const u = (await api('status')).update;
+    umsg.textContent = u.running ? u.message : u.error || '';
+    if (u.running) setTimeout(watchUpdate, 700);
+    else { ucheck.disabled = false; uinstall.disabled = false; }
+  };
+  ucheck.onclick = async () => {
+    ucheck.disabled = true; uinstall.hidden = true; umsg.textContent = 'Checking GitHub…';
+    try {
+      const u = await api('update');
+      umsg.textContent = u.available ? `Version ${u.latest} is available.${u.notes ? ' ' + u.notes : ''}` : `You have the newest version (${u.current}).`;
+      uinstall.hidden = !u.available;
+    } catch (e) { umsg.textContent = e.message; }
+    ucheck.disabled = false;
+  };
+  uinstall.onclick = async () => {
+    ucheck.disabled = uinstall.disabled = true;
+    try { await post('update'); watchUpdate(); } catch (e) { umsg.textContent = e.message; ucheck.disabled = uinstall.disabled = false; }
+  };
+  if (s.update.running) watchUpdate();
   $$('[data-del]').forEach(b => b.onclick = async () => {
     const t = TAGS.find(x => x.id === +b.dataset.del);
     if (!confirm(`Delete "${t.name}"? It will be removed from ${t.uses} trade(s).`)) return;

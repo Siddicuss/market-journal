@@ -67,6 +67,16 @@ zero or the market settles. P&L includes fees.
 - **Polymarket:** P&L uses the USDC that actually moved. The fee shown is the
   difference between that and size × price. Rewards and rebates aren't counted.
 
+## Updates
+
+Settings → Updates → **Check for updates** looks for a newer release on
+GitHub. **Update now** downloads it, closes the app, installs it and reopens
+it. Your journal and saved key are kept.
+
+To publish an update: bump `VERSION` in `version.py`, run `build_journal.cmd`,
+then create a GitHub release tagged `v<version>` with
+`dist\MarketJournal-Setup.exe` attached.
+
 ## Rebuild after code changes
 
 ```

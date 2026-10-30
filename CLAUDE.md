@@ -85,7 +85,16 @@ dist\MarketJournal-Setup.exe /S [/NODESKTOP]                    # silent install
   - Tests stub `unregister`, `registered_dir` and the paths, so they never
     touch the real registry.
 - **Rebuilding:** close the running app first, because its `.exe` is locked
-  while it runs. Bump `installer.VERSION` for each release.
+  while it runs. Bump `version.VERSION` for each release.
+- **Updates (`updater.py`):**
+  - Settings → Updates checks the latest GitHub release of
+    `Siddicuss/market-journal` with no login, so the repo must be public.
+  - The release needs a tag like `v1.2.1` and a `MarketJournal-Setup.exe`
+    asset. The download is checked against its size and GitHub's SHA-256.
+  - "Update now" runs `MarketJournal-Setup.exe /S /UPDATE=<pid>`, then closes
+    the window. The installer waits for the app to exit, installs and reopens it.
+  - It only installs from the built app (`sys.frozen`); from source it only checks.
+  - Publishing a release is outward-facing: only when the user asks.
 
 ## Verified Oct 28, 2026
 

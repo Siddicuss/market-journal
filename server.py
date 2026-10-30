@@ -17,9 +17,12 @@ from urllib.parse import parse_qs, urlparse
 import credentials
 import polymarket
 import stats
+import updater
 from kalshi_client import KalshiError, ReadOnlyClient
 from polymarket_client import PolymarketError, PublicClient, validate_address
 from sync import candles_for, rebuild, sync
+from updater import UpdateError
+from version import VERSION
 
 log = logging.getLogger('journal')
 FILTER_KEYS = ('start', 'end', 'platform', 'series', 'side', 'outcome', 'status', 'tag', 'search')
@@ -32,7 +35,7 @@ class App:
     """Shared state behind the HTTP handlers."""
 
     def __init__(self, store, web_dir, client_factory=ReadOnlyClient, creds=credentials, pm_factory=PublicClient,
-                 open_url=webbrowser.open):
+                 open_url=webbrowser.open, updates=updater, quit=lambda: None):
         self.store = store
         self.web_dir = Path(web_dir)
         self.token = secrets.token_urlsafe(24)
@@ -40,6 +43,9 @@ class App:
         self.creds = creds
         self.pm_factory = pm_factory
         self.open_url = open_url
+        self.updates = updates
+        self.quit = quit  # closes the window so the installer can replace the app
+        self.update_state = {'running': False, 'message': '', 'error': None}
         self.pm = None
         self.client = None
         self.source = None
@@ -104,6 +110,36 @@ class App:
         threading.Thread(target=run, daemon=True, name='sync').start()
         return True
 
+    # updates -------------------------------------------------------------
+    def start_update(self):
+        if not self.updates.installed():
+            raise ValueError('Updates install from the installed app, not from source.')
+        if self.update_state['running']:
+            return False
+        info = self.updates.check()
+        if not info['available']:
+            raise ValueError(f'Market Journal {VERSION} is the newest version.')
+        self.update_state.update(running=True, message='Downloading…', error=None)
+
+        def progress(done, total):
+            if total:
+                self.update_state['message'] = f'Downloading… {done * 100 // total}%'
+
+        def run():
+            try:
+                setup = self.updates.download(info['release'], progress)
+                self.update_state['message'] = 'Installing. Market Journal will reopen in a moment.'
+                self.updates.launch_installer(setup)
+                time.sleep(1.5)  # let the page show the message
+                self.quit()
+            except Exception as exc:
+                log.error('Update failed: %s', exc)
+                self.update_state.update(running=False, message='',
+                                         error=str(exc) if isinstance(exc, UpdateError) else f'The update failed: {exc}')
+
+        threading.Thread(target=run, daemon=True, name='update').start()
+        return True
+
     def auto_sync_loop(self):
         while True:
             time.sleep(30)
@@ -137,7 +173,7 @@ class App:
             info = s.series()
             series = {t['series']: t['series_name'] for t in trades}
             platform = {t['series']: t['platform'] for t in trades}
-            return {'configured': self.configured, 'kalshi': bool(self.client), 'source': self.source,
+            return {'version': VERSION, 'update': self.update_state, 'configured': self.configured, 'kalshi': bool(self.client), 'source': self.source,
                     'polymarket': self.pm.address if self.pm else None,
                     'pm_value': s.get_meta('pm_value') if self.pm else None, 'last_sync': s.get_meta('last_sync'),
                     'balance': s.get_meta('balance') if self.client else None, 'sync': self.sync_state, 'trades': len(trades),
@@ -165,6 +201,9 @@ class App:
             if not t:
                 raise LookupError('Trade not found.')
             return {'trade': t, 'market': self.market_for(t)}
+        if path == '/api/update':
+            info = self.updates.check()
+            return {k: info[k] for k in ('current', 'latest', 'available')} | {'notes': info['release']['notes']}
         if path == '/api/candles':
             t = s.trade(q.get('id'))
             if not t:
@@ -207,6 +246,8 @@ class App:
         s = self.store
         if path == '/api/sync':
             return {'started': self.start_sync()}
+        if path == '/api/update':
+            return {'started': self.start_update()}
         if path == '/api/donate':
             self.open_url(DONATE_URL)  # the user's browser, so the journal window stays put
             return {'ok': True}
@@ -325,7 +366,7 @@ def make_handler(app):
                 self._json(404, {'error': str(exc).strip("'") or 'Not found.'})
             except (ValueError, PermissionError) as exc:
                 self._json(400, {'error': str(exc)})
-            except (KalshiError, PolymarketError) as exc:
+            except (KalshiError, PolymarketError, UpdateError) as exc:
                 self._json(502, {'error': str(exc)})
             except Exception as exc:
                 log.error('Request failed: %s\n%s', self.path, traceback.format_exc())

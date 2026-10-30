@@ -8,6 +8,7 @@ old name (Kalshi Journal) is removed, and its data moved over.
 
   MarketJournal-Setup.exe               install with a small window
   MarketJournal-Setup.exe /S            install silently (/NODESKTOP to skip the Desktop shortcut)
+  MarketJournal-Setup.exe /S /UPDATE=<pid>  the app's update button: wait for it to close, install, reopen
   <install dir>\\uninstall.exe          uninstall (also run from Installed apps)
   uninstall.exe /S [/DELETEDATA]        uninstall silently
 """
@@ -23,8 +24,9 @@ import time
 import zipfile
 from pathlib import Path
 
+from version import VERSION
+
 APP = 'Market Journal'
-VERSION = '1.1.2'
 EXE = 'MarketJournal.exe'
 UNINSTALL_KEY = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\MarketJournal'
 OLD_APP, OLD_EXE = 'Kalshi Journal', 'KalshiJournal.exe'
@@ -297,11 +299,44 @@ def run_uninstall(args):
     subprocess.Popen(f'cmd /c ping 127.0.0.1 -n 3 >nul & del "{sys.executable}"', creationflags=NO_WINDOW)
 
 
+def wait_for_exit(pid, timeout=60):
+    """Wait for the app that launched an update to close. True once it has (or was already gone)."""
+    SYNCHRONIZE = 0x00100000
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+    if not handle:
+        return True
+    try:
+        return kernel32.WaitForSingleObject(handle, int(timeout * 1000)) == 0  # WAIT_OBJECT_0
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def run_update(pid, desktop):
+    if not wait_for_exit(pid):
+        tell(f'{APP} did not close, so the update was not installed. Close it and run the update again.', error=True)
+        return 1
+    for _ in range(20):  # the old window can take a moment to release its files
+        if not app_running():
+            break
+        time.sleep(0.5)
+    try:
+        target = install(registered_dir() or default_install_dir(), desktop=desktop)
+    except Exception as exc:
+        tell(f'The update could not be installed:\n\n{exc}\n\nDownload the installer from GitHub and run it.', error=True)
+        return 1
+    subprocess.Popen([str(target)], cwd=str(target.parent))
+    return 0
+
+
 def main(args):
     upper = [a.upper() if a.startswith('/') and not a.upper().startswith('/DIR=') else a for a in args]
     is_uninstaller = Path(sys.executable).name.lower() == 'uninstall.exe'
     if is_uninstaller or '/UNINSTALL' in upper:
         return run_uninstall(upper)
+    update = next((a for a in upper if a.startswith('/UPDATE=')), None)
+    if update:
+        sys.exit(run_update(int(update[8:]), desktop='/NODESKTOP' not in upper))
     if '/S' in upper:
         if app_running():
             sys.exit(2)

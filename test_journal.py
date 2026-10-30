@@ -627,6 +627,69 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(opened, ['https://www.paypal.com/donate/?business=DCQT2RXMBW7B2&no_recurring=0&currency_code=USD'])
         self.assertEqual(self.call('/api/donate', {}, token=False)[0], 403)
 
+    def test_update_check_and_install(self):
+        events = []
+
+        class FakeUpdates:
+            available = True
+
+            def installed(self):
+                return True
+
+            def check(self):
+                return {'current': '1.2.0', 'latest': '1.3.0', 'available': self.available,
+                        'release': {'version': '1.3.0', 'notes': 'Faster sync', 'url': 'https://github.com/x', 'size': 3}}
+
+            def download(self, release, progress):
+                progress(3, 3)
+                events.append(('download', release['version']))
+                return Path('setup.exe')
+
+            def launch_installer(self, setup):
+                events.append(('launch', setup.name))
+
+        fake = FakeUpdates()
+        self.app.updates = fake
+        self.app.quit = lambda: events.append(('quit',))
+        status, body = self.call('/api/update')
+        self.assertEqual((status, body['available'], body['latest'], body['notes']), (200, True, '1.3.0', 'Faster sync'))
+        self.assertEqual(self.call('/api/update', {}, token=False)[0], 403)
+        self.assertEqual(self.call('/api/update', {}), (200, {'started': True}))
+        deadline = time.time() + 5
+        while ('quit',) not in events and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(events, [('download', '1.3.0'), ('launch', 'setup.exe'), ('quit',)])
+        self.assertEqual(self.call('/api/status')[1]['version'], __import__('version').VERSION)
+        fake.available = False
+        self.app.update_state['running'] = False
+        status, body = self.call('/api/update', {})
+        self.assertEqual(status, 400)
+        self.assertIn('newest version', body['error'])
+
+    def test_update_failure_is_reported(self):
+        import updater
+
+        class Broken:
+            def installed(self):
+                return True
+
+            def check(self):
+                return {'current': '1.0.0', 'latest': '2.0.0', 'available': True, 'release': {'version': '2.0.0'}}
+
+            def download(self, release, progress):
+                raise updater.UpdateError('The download was incomplete. Try again.')
+
+        self.app.updates = Broken()
+        self.assertEqual(self.call('/api/update', {})[0], 200)
+        deadline = time.time() + 5
+        while self.app.update_state['running'] and time.time() < deadline:
+            time.sleep(0.05)
+        state = self.call('/api/status')[1]['update']
+        self.assertEqual((state['running'], state['error']), (False, 'The download was incomplete. Try again.'))
+
+    def test_update_needs_installed_app(self):
+        self.assertEqual(self.call('/api/update', {})[0], 400)  # tests run from source
+
     def test_requires_token(self):
         self.assertEqual(self.call('/api/status', token=False)[0], 403)
         self.assertEqual(self.call('/api/sync', {}, token=False)[0], 403)
@@ -826,6 +889,76 @@ class InstallerTests(unittest.TestCase):
         (other / 'mine.txt').write_text('keep')
         self.installer.remove_old_name()
         self.assertTrue((other / 'mine.txt').exists())
+
+
+class UpdaterTests(unittest.TestCase):
+    def release(self, tag='v1.10.0', **asset):
+        return {'tag_name': tag, 'body': ' Notes ', 'assets': [
+            {'name': 'notes.txt', 'browser_download_url': 'https://github.com/n'},
+            {'name': 'MarketJournal-Setup.exe', 'size': 5,
+             'browser_download_url': 'https://github.com/Siddicuss/market-journal/releases/download/v1.10.0/MarketJournal-Setup.exe',
+             **asset}]}
+
+    def test_compares_versions_numerically(self):
+        import updater
+        self.assertGreater(updater.parse_version('v1.10.0'), updater.parse_version('1.9.3'))
+        info = updater.check(lambda url: self.release())
+        self.assertTrue(info['available'])
+        self.assertEqual((info['latest'], info['release']['notes'], info['release']['size']), ('1.10.0', 'Notes', 5))
+        self.assertFalse(updater.check(lambda url: self.release('v' + updater.VERSION))['available'])
+        self.assertFalse(updater.check(lambda url: self.release('v0.9.0'))['available'])
+        with self.assertRaises(updater.UpdateError):
+            updater.check(lambda url: {'tag_name': 'v9.0.0', 'assets': []})
+        with self.assertRaises(updater.UpdateError):
+            updater.check(lambda url: self.release('nightly'))
+
+    def test_reads_github_checksum(self):
+        import updater
+        digest = 'sha256:' + 'ab' * 32
+        self.assertEqual(updater.latest(lambda url: self.release(digest=digest))['sha256'], 'ab' * 32)
+        self.assertIsNone(updater.latest(lambda url: self.release())['sha256'])
+
+    def download(self, payload, **release):
+        import hashlib
+        import io
+        import updater
+        rel = {'version': '1.10.0', 'size': len(payload), 'sha256': hashlib.sha256(payload).hexdigest(),
+               'url': 'https://github.com/Siddicuss/market-journal/releases/download/v1.10.0/MarketJournal-Setup.exe'} | release
+
+        class Response(io.BytesIO):
+            headers = {'Content-Length': str(len(payload))}
+
+        original = updater._open
+        updater._open = lambda url, timeout=20: Response(payload)
+        folder = tempfile.mkdtemp()
+        try:
+            return updater.download(rel, folder=folder), folder
+        finally:
+            updater._open = original
+
+    def test_download_checks_size_and_checksum(self):
+        import updater
+        path, folder = self.download(b'setup')
+        self.assertEqual(path.read_bytes(), b'setup')
+        with self.assertRaises(updater.UpdateError):
+            self.download(b'setup', sha256='0' * 64)
+        with self.assertRaises(updater.UpdateError):
+            self.download(b'setup', size=99)
+        with self.assertRaises(updater.UpdateError):
+            self.download(b'setup', url='https://example.com/MarketJournal-Setup.exe')
+
+    def test_installer_wait_returns_for_closed_app(self):
+        import installer
+        import subprocess
+        p = subprocess.Popen([sys.executable, '-c', 'pass'])
+        p.wait()
+        self.assertTrue(installer.wait_for_exit(p.pid, timeout=1))
+        p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'])
+        try:
+            self.assertFalse(installer.wait_for_exit(p.pid, timeout=0.2))
+        finally:
+            p.kill()
+            p.wait()
 
 
 if __name__ == '__main__':
