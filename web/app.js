@@ -190,7 +190,7 @@ function renderStatus() {
   $('#balance').innerHTML = parts.join(' · ').replace(/^./, c => c.toUpperCase());
   const banner = $('#banner');
   if (!s.configured && !location.hash.startsWith('#/settings')) {
-    banner.innerHTML = `<div class="banner"><span>Connect Kalshi or Polymarket to start your journal.</span><a class="btn small" href="#/settings">Connect an account</a></div>`;
+    banner.innerHTML = `<div class="banner"><span>Connect ${s.polymarket_enabled ? 'Kalshi or Polymarket' : 'Kalshi'} to start your journal.</span><a class="btn small" href="#/settings">Connect an account</a></div>`;
   } else if (sync.error && !sync.running) {
     banner.innerHTML = `<div class="banner err"><span>${esc(sync.error)}</span><span class="row"><button class="btn small" id="retry">Retry</button><a class="btn small" href="#/settings">Settings</a></span></div>`;
     $('#retry').onclick = startSync;
@@ -246,7 +246,7 @@ function wireRows(root) { $$('tr[data-id]', root).forEach(tr => tr.onclick = () 
 function needsSetup() {
   if (STATUS.configured || STATUS.trades) return false;
   view().innerHTML = `<div class="panel"><div class="empty"><h2>Welcome to Market Journal</h2>
-    <p>Connect Kalshi with an API key, or Polymarket with your wallet address, and your trades will appear here automatically.<br>
+    <p>Connect Kalshi with an API key${STATUS.polymarket_enabled ? ', or Polymarket with your wallet address,' : ''} and your trades will appear here automatically.<br>
     The journal only reads your history. It never places or cancels orders.</p>
     <a class="btn primary" href="#/settings">Connect an account</a></div></div>`;
   return true;
@@ -683,7 +683,9 @@ async function viewSettings(seq) {
             <div class="row"><button class="btn primary" id="ksave">Save and test</button>${s.kalshi ? '<button class="btn danger" id="kforget">Remove saved key</button>' : ''}<span class="muted" id="kmsg"></span></div>
           </details>
         </div></div>
-      <div class="panel"><div class="hd"><h2>Polymarket</h2>${s.polymarket ? '<span class="badge win">CONNECTED</span>' : '<span class="badge">NOT CONNECTED</span>'}</div>
+      ${!s.polymarket_enabled ? `<div class="panel"><div class="hd"><h2>Polymarket</h2><span class="badge">COMING SOON</span></div>
+        <div class="bd"><p class="muted" style="margin:0">Polymarket support is coming soon.</p></div></div>`
+      : `<div class="panel"><div class="hd"><h2>Polymarket</h2>${s.polymarket ? '<span class="badge win">CONNECTED</span>' : '<span class="badge">NOT CONNECTED</span>'}</div>
         <div class="bd">
           <p class="muted" style="margin-top:0">${s.polymarket ? `Reading wallet <span class="mono">${esc(s.polymarket.slice(0, 6) + '…' + s.polymarket.slice(-4))}</span>.` : 'Polymarket trade history is public, so no key is needed. Just your wallet address.'}</p>
           <details ${s.kalshi || s.polymarket ? '' : 'open'}><summary style="cursor:pointer;font-weight:600;margin-bottom:10px">${s.polymarket ? 'Use a different wallet' : 'Add your wallet address'}</summary>
@@ -691,7 +693,7 @@ async function viewSettings(seq) {
             <div class="field"><label>Wallet address</label><input id="pmaddr" autocomplete="off" spellcheck="false" placeholder="0x…" value="${esc(s.polymarket || '')}"></div>
             <div class="row"><button class="btn primary" id="pmsave">Save and test</button>${s.polymarket ? '<button class="btn danger" id="pmforget">Disconnect</button>' : ''}<span class="muted" id="pmmsg"></span></div>
           </details>
-        </div></div>
+        </div></div>`}
       <div class="panel"><div class="hd"><h2>Data</h2></div><div class="bd">
         <p class="muted" style="margin-top:0">The journal syncs when it opens and every 5 minutes while it's open. Your notes, tags and reviews are stored only on this PC, in <span class="mono">%LOCALAPPDATA%\\MarketJournal</span>.</p>
         <div class="row"><button class="btn" id="dsync" ${s.configured ? '' : 'disabled'}>Sync now</button><button class="btn" id="drebuild">Rebuild trades</button></div>
@@ -734,7 +736,7 @@ async function viewSettings(seq) {
   if ($('#kforget')) $('#kforget').onclick = async () => {
     if (!confirm('Remove the saved API key from this PC? Your trades and notes stay. You can enter a key again any time.')) return;
     await post('credentials/forget'); await refreshStatus(); viewSettings(++renderSeq); };
-  $('#pmsave').onclick = async () => {
+  if ($('#pmsave')) $('#pmsave').onclick = async () => {
     $('#pmmsg').textContent = 'Checking with Polymarket…';
     try {
       await post('polymarket', { address: $('#pmaddr').value });

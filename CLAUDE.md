@@ -19,6 +19,7 @@ bot in `..\kalshi-local-trader` and does not import its code.
   - The Polymarket wallet address is public. It is stored in `journal.db` meta
     (`pm_wallet`).
 - **Git:** don't commit or push unless asked.
+- **README.md:** the user edits it on GitHub. Don't change it unless asked, and keep it to important information only.
 - **The real journal:** test writes (notes, tags, reviews) on a copy of
   `journal.db`, not the real one.
 
@@ -36,7 +37,11 @@ bot in `..\kalshi-local-trader` and does not import its code.
     before the cutoff), settlements and market details.
   - `trades.py` groups fills into trades as a signed YES position. A
     settlement's `fee_cost` repeats the fill fees, so it is not added again.
-- **Polymarket:**
+- **Polymarket (switched off, Oct 30 2026):**
+  - The user asked to show it as "Coming soon" instead of deleting it.
+    `server.POLYMARKET_ENABLED = False` hides the wallet form, ignores a saved
+    wallet, skips its sync and leaves its trades out of `rebuild`. Set it to
+    True to bring it back; the code and tests below still work.
   - `polymarket.py` downloads the wallet's `data-api /v2/activity` (cursor
     paged). Each sync replaces the rows from one day before the latest one.
   - Market details come from `gamma-api /markets`, which needs `closed=true`

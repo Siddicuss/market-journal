@@ -594,7 +594,7 @@ class ServerTests(unittest.TestCase):
         sync(FakeKalshi(), self.store)
         self.creds = FakeCreds()
         self.app = App(self.store, Path(__file__).parent / 'web', client_factory=lambda k, p: FakeKalshi(), creds=self.creds,
-                       pm_factory=lambda address: FakePolymarket(address))
+                       pm_factory=lambda address: FakePolymarket(address), polymarket_enabled=True)
         self.httpd = serve(self.app)
         self.base = f'http://127.0.0.1:{self.httpd.server_address[1]}'
 
@@ -689,6 +689,23 @@ class ServerTests(unittest.TestCase):
 
     def test_update_needs_installed_app(self):
         self.assertEqual(self.call('/api/update', {})[0], 400)  # tests run from source
+
+    def test_polymarket_coming_soon(self):
+        import polymarket
+        from sync import rebuild
+        wallet = '0x' + 'a' * 40
+        self.assertEqual(self.call('/api/polymarket', {'address': wallet})[0], 200)
+        polymarket.sync(FakePolymarket(wallet), self.store)
+        rebuild(self.store)
+        self.assertTrue(any(t['platform'] == 'polymarket' for t in self.store.trades()))
+        off = App(self.store, Path(__file__).parent / 'web', creds=self.creds,
+                  pm_factory=lambda address: FakePolymarket(address), polymarket_enabled=False)
+        self.assertIsNone(off.pm)  # the saved wallet is ignored and never synced
+        self.assertFalse(any(t['platform'] == 'polymarket' for t in self.store.trades()))
+        self.assertFalse(off.get('/api/status', {})['polymarket_enabled'])
+        with self.assertRaises(ValueError):
+            off.post('/api/polymarket', {'address': wallet})
+        self.assertEqual(self.store.get_meta('pm_wallet'), wallet)  # kept for when it comes back
 
     def test_requires_token(self):
         self.assertEqual(self.call('/api/status', token=False)[0], 403)

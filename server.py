@@ -29,13 +29,15 @@ FILTER_KEYS = ('start', 'end', 'platform', 'series', 'side', 'outcome', 'status'
 PLATFORMS = {'kalshi': 'Kalshi', 'polymarket': 'Polymarket'}
 DONATE_URL = 'https://www.paypal.com/donate/?business=DCQT2RXMBW7B2&no_recurring=0&currency_code=USD'
 AUTO_SYNC_SECONDS = 300
+POLYMARKET_ENABLED = False  # shown as "Coming soon" in Settings; the code is kept for later
 
 
 class App:
     """Shared state behind the HTTP handlers."""
 
     def __init__(self, store, web_dir, client_factory=ReadOnlyClient, creds=credentials, pm_factory=PublicClient,
-                 open_url=webbrowser.open, updates=updater, quit=lambda: None):
+                 open_url=webbrowser.open, updates=updater, quit=lambda: None,
+                 polymarket_enabled=POLYMARKET_ENABLED):
         self.store = store
         self.web_dir = Path(web_dir)
         self.token = secrets.token_urlsafe(24)
@@ -43,6 +45,7 @@ class App:
         self.creds = creds
         self.pm_factory = pm_factory
         self.open_url = open_url
+        self.polymarket_enabled = polymarket_enabled
         self.updates = updates
         self.quit = quit  # closes the window so the installer can replace the app
         self.update_state = {'running': False, 'message': '', 'error': None}
@@ -53,13 +56,15 @@ class App:
         self.sync_state = {'running': False, 'message': '', 'error': None, 'result': None}
         self.last_seen = time.time()
         self._connect()
+        if not polymarket_enabled and any(t['platform'] == 'polymarket' for t in store.trades()):
+            rebuild(store, False)  # drop trades from a wallet connected before Polymarket was switched off
 
     @property
     def configured(self):
         return bool(self.client or self.pm)
 
     def _connect(self):
-        wallet = self.store.get_meta('pm_wallet')
+        wallet = self.store.get_meta('pm_wallet') if self.polymarket_enabled else None
         self.pm = self.pm_factory(wallet) if wallet else None
         found = self.creds.load()
         if not found:
@@ -74,7 +79,8 @@ class App:
     # sync ----------------------------------------------------------------
     def start_sync(self):
         if not self.configured:
-            raise ValueError('Connect Kalshi or Polymarket in Settings first.')
+            raise ValueError('Connect Kalshi in Settings first.' if not self.polymarket_enabled else
+                             'Connect Kalshi or Polymarket in Settings first.')
         if not self.sync_lock.acquire(blocking=False):
             return False
         self.sync_state.update(running=True, message='Starting sync', error=None)
@@ -96,7 +102,7 @@ class App:
                     except Exception as exc:
                         log.error('%s sync failed\n%s', name, traceback.format_exc())
                         errors.append(f'{name} sync failed: {exc}')
-                trades = rebuild(self.store)
+                trades = rebuild(self.store, self.polymarket_enabled)
                 self.store.set_meta('last_sync', time.time())
                 self.sync_state.update(result={'trades': len(trades)}, error=' · '.join(errors) or None,
                                        message='Sync failed' if errors and not done else
@@ -173,7 +179,7 @@ class App:
             info = s.series()
             series = {t['series']: t['series_name'] for t in trades}
             platform = {t['series']: t['platform'] for t in trades}
-            return {'version': VERSION, 'update': self.update_state, 'configured': self.configured, 'kalshi': bool(self.client), 'source': self.source,
+            return {'version': VERSION, 'update': self.update_state, 'configured': self.configured, 'polymarket_enabled': self.polymarket_enabled, 'kalshi': bool(self.client), 'source': self.source,
                     'polymarket': self.pm.address if self.pm else None,
                     'pm_value': s.get_meta('pm_value') if self.pm else None, 'last_sync': s.get_meta('last_sync'),
                     'balance': s.get_meta('balance') if self.client else None, 'sync': self.sync_state, 'trades': len(trades),
@@ -261,6 +267,8 @@ class App:
             self.sync_state['error'] = None
             return {'ok': True, 'source': self.source}
         if path == '/api/polymarket':
+            if not self.polymarket_enabled:
+                raise ValueError('Polymarket is coming soon.')
             address = validate_address(body.get('address'))
             client = self.pm_factory(address)
             client.value()  # make sure Polymarket answers before saving
@@ -274,7 +282,7 @@ class App:
             s.set_meta('pm_wallet', None)
             s.clear_pm_activity()
             self._connect()
-            rebuild(s)
+            rebuild(s, self.polymarket_enabled)
             return {'ok': True, 'configured': self.configured}
         if path == '/api/credentials/forget':
             self.creds.forget()
@@ -305,7 +313,7 @@ class App:
             s.set_series_name(str(body['ticker']), body.get('name', ''))
             return {'ok': True, 'name': s.series_names().get(str(body['ticker']))}
         if path == '/api/rebuild':
-            return {'trades': len(rebuild(s))}
+            return {'trades': len(rebuild(s, self.polymarket_enabled))}
         raise LookupError('Not found.')
 
     def export_csv(self, q):

@@ -45,9 +45,10 @@ def normalize_settlement(raw):
     }
 
 
-def rebuild(store):
+def rebuild(store, polymarket_trades=True):
     trades = build_trades(store.fills(), store.markets(), store.settlements())
-    trades += polymarket.build_trades(store.pm_activity(), store.pm_markets())
+    if polymarket_trades:
+        trades += polymarket.build_trades(store.pm_activity(), store.pm_markets())
     trades.sort(key=lambda t: t['open_ts'] or 0)
     store.replace_trades(trades)
     return trades
