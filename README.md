@@ -4,12 +4,21 @@ A trade journal for your Kalshi. It only reads your history and never places or 
 
 ## Install
 
-Run **`MarketJournal-Setup.exe`**. Setup asks for no admin rights. It installs
-to `%LOCALAPPDATA%\Programs\Market Journal` and adds a Start-menu shortcut,
-plus a Desktop shortcut unless you untick it.
+**[⬇ Download MarketJournal-Setup.exe](https://github.com/Siddicuss/market-journal/releases/latest/download/MarketJournal-Setup.exe)**
+(newest version). The green **Code** button downloads only the source code,
+not the app.
 
-- **Windows warning:** Windows may say "Windows protected your PC" because the
-  installer isn't code-signed. Click **More info → Run anyway**.
+1. Download the installer with the link above, or open **Releases** on the
+   right and click **MarketJournal-Setup.exe** under **Assets**.
+2. If your browser warns the file isn't commonly downloaded, click **⋯ → Keep
+   → Keep anyway**.
+3. Open **MarketJournal-Setup.exe** from your Downloads folder.
+4. If Windows says "Windows protected your PC", click **More info → Run
+   anyway**. This appears because the installer isn't code-signed yet.
+5. Click **Install**. No admin rights are needed. It installs to
+   `%LOCALAPPDATA%\Programs\Market Journal` and adds Start-menu and Desktop
+   shortcuts.
+
 - **Updating:** run a newer Setup over the top. Your journal and key are kept.
   If market Journal is installed, Setup removes it and moves its data over.
 - **Uninstalling:** go to **Settings → Apps → Installed apps → Market Journal →
