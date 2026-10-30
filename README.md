@@ -71,27 +71,3 @@ Settings → Updates → **Check for updates** looks for a newer release on
 GitHub. **Update now** downloads it, closes the app, installs it and reopens
 it. Your journal and saved key are kept.
 
-To publish an update: bump `VERSION` in `version.py`, run `build_journal.cmd`,
-then create a GitHub release tagged `v<version>` with
-`dist\MarketJournal-Setup.exe` attached.
-
-## Rebuild after code changes
-
-```
-build_journal.cmd
-```
-
-The first run creates `.venv` (Python 3.14) and installs `requirements.txt`.
-
-The script:
-
-1. runs the tests
-2. builds the app (`dist\MarketJournal\`)
-3. builds the one-file installer, **`dist\MarketJournal-Setup.exe`**, which is
-   the file to share
-
-Tests only:
-
-```
-.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
-```
