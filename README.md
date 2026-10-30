@@ -51,8 +51,6 @@ DraftKings Predictions has no public API, so it can't be connected.
 - **Reports:** breakdowns by platform, market, side, tag, mistake, entry
   price, time left at entry, hold time, size, hour, weekday, exit type and
   maker/taker. Also price vs. outcome, and an A/B compare.
-- **Donate:** a PayPal button at the bottom of the sidebar opens PayPal in
-  your web browser.
 - **Weekly review:** the week's numbers against the previous week, a day-by-day
   chart, best and worst trades, top tags and mistakes, a written review
   (worked / didn't / focus), and past weeks.
