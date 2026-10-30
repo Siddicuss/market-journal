@@ -1,8 +1,6 @@
 # Market Journal
 
-A trade journal for your Kalshi and Polymarket accounts, in the style of
-Tradervue. It only reads your history and never places or cancels orders.
-(It was called Kalshi Journal before version 1.1.)
+A trade journal for your Kalshi. It only reads your history and never places or cancels orders.
 
 ## Install
 
@@ -13,7 +11,7 @@ plus a Desktop shortcut unless you untick it.
 - **Windows warning:** Windows may say "Windows protected your PC" because the
   installer isn't code-signed. Click **More info → Run anyway**.
 - **Updating:** run a newer Setup over the top. Your journal and key are kept.
-  If Kalshi Journal is installed, Setup removes it and moves its data over.
+  If market Journal is installed, Setup removes it and moves its data over.
 - **Uninstalling:** go to **Settings → Apps → Installed apps → Market Journal →
   Uninstall**. It asks whether to also delete your journal data and saved key;
   the default is to keep them.
@@ -30,12 +28,6 @@ both:
 - **Kalshi:** enter your key ID and private key file (kalshi.com → Account &
   security → API keys). The key is tested, then saved encrypted with your
   Windows login. **Remove saved key** clears it.
-- **Polymarket:** enter your wallet address (polymarket.com → your profile →
-  the 0x… address). Polymarket trade history is public, so no key is needed.
-  This covers polymarket.com accounts. Polymarket US accounts aren't
-  supported yet.
-
-DraftKings Predictions has no public API, so it can't be connected.
 
 ## Features
 
@@ -62,8 +54,6 @@ log). A trade opens when a position leaves zero and closes when it returns to
 zero or the market settles. P&L includes fees.
 
 - **Kalshi:** fees come from each fill.
-- **Polymarket:** P&L uses the USDC that actually moved. The fee shown is the
-  difference between that and size × price. Rewards and rebates aren't counted.
 
 ## Updates
 
